@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
+import AvailablePropertiesSection from "./AvailablePropertiesSection";
 
 interface Lease {
   id: string;
@@ -74,6 +75,8 @@ const TenantDashboard = () => {
 
   return (
     <div className="space-y-6">
+      <AvailablePropertiesSection />
+      
       {lease ? (
         <>
           <Card>
