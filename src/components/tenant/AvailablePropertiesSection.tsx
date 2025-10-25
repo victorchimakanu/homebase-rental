@@ -5,14 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Home, MapPin, Building2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import ContactLandlordDialog from "./ContactLandlordDialog";
 
 const PAGE_SIZE = 12;
 
-interface AvailablePropertiesSectionProps {
-  onContact?: (property: { id: string; name: string; landlordId: string }) => void;
-}
-
-const AvailablePropertiesSection = ({ onContact }: AvailablePropertiesSectionProps) => {
+const AvailablePropertiesSection = () => {
   const [pageIndex, setPageIndex] = useState(0);
   const offset = pageIndex * PAGE_SIZE;
 
@@ -106,18 +103,16 @@ const AvailablePropertiesSection = ({ onContact }: AvailablePropertiesSectionPro
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="mt-auto">
-                    <Button
-                      className="w-full"
-                      onClick={() =>
-                        onContact?.({
-                          id: property.id,
-                          name: property.name,
-                          landlordId: property.landlord_id,
-                        })
+                    <ContactLandlordDialog
+                      propertyId={property.id}
+                      landlordId={property.landlord_id}
+                      propertyName={property.name}
+                      trigger={
+                        <Button className="w-full">
+                          Contact Landlord
+                        </Button>
                       }
-                    >
-                      Contact Landlord
-                    </Button>
+                    />
                   </CardContent>
                 </Card>
               ))}
