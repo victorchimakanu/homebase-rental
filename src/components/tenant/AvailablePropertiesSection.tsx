@@ -23,8 +23,22 @@ const AvailablePropertiesSection = () => {
         .order("created_at", { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
 
-      if (error) throw error;
-      return data;
+      if (error) {
+        console.error("Error loading available properties:", error);
+        throw error;
+      }
+      
+      // Validate returned data
+      if (data && Array.isArray(data)) {
+        return data.filter(property => 
+          property.id && 
+          property.name && 
+          property.address && 
+          property.landlord_id
+        );
+      }
+      
+      return data || [];
     },
   });
 
@@ -33,7 +47,9 @@ const AvailablePropertiesSection = () => {
   };
 
   const handleNextPage = () => {
-    setPageIndex((prev) => prev + 1);
+    if (hasNextPage) {
+      setPageIndex((prev) => prev + 1);
+    }
   };
 
   const hasNextPage = properties && properties.length === PAGE_SIZE;

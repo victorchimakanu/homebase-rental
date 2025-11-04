@@ -19,26 +19,53 @@ const LandlordDashboard = () => {
   }, []);
 
   const loadStats = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) return;
 
-    const [properties, leases, payments] = await Promise.all([
-      supabase.from("properties").select("*", { count: "exact" }).eq("landlord_id", user.id),
-      supabase.from("leases").select("*", { count: "exact" }).eq("landlord_id", user.id).eq("status", "active"),
-      supabase.from("rent_payments").select("*, leases!inner(landlord_id)").eq("leases.landlord_id", user.id),
-    ]);
+      const [properties, leases, payments] = await Promise.all([
+        supabase.from("properties").select("*", { count: "exact" }).eq("landlord_id", user.id),
+        supabase.from("leases").select("*", { count: "exact" }).eq("landlord_id", user.id).eq("status", "active"),
+        // Fetch only necessary fields and filter at database level
+        supabase.from("rent_payments")
+          .select("amount, late_fee, status, leases!inner(landlord_id)")
+          .eq("leases.landlord_id", user.id),
+      ]);
 
-    const pendingPayments = payments.data?.filter(p => p.status === "pending" || p.status === "overdue").length || 0;
-    const totalRevenue = payments.data
-      ?.filter(p => p.status === "paid")
-      .reduce((sum, p) => sum + Number(p.amount) + Number(p.late_fee), 0) || 0;
+      if (properties.error) throw properties.error;
+      if (leases.error) throw leases.error;
+      if (payments.error) throw payments.error;
 
-    setStats({
-      properties: properties.count || 0,
-      activeLeases: leases.count || 0,
-      pendingPayments,
-      totalRevenue,
-    });
+      // Use single reduce for better performance
+      const paymentStats = (payments.data || []).reduce(
+        (acc, p) => {
+          if (p.status === "pending" || p.status === "overdue") {
+            acc.pendingPayments++;
+          } else if (p.status === "paid") {
+            acc.totalRevenue += Number(p.amount) + Number(p.late_fee);
+          }
+          return acc;
+        },
+        { pendingPayments: 0, totalRevenue: 0 }
+      );
+
+      setStats({
+        properties: properties.count || 0,
+        activeLeases: leases.count || 0,
+        pendingPayments: paymentStats.pendingPayments,
+        totalRevenue: paymentStats.totalRevenue,
+      });
+    } catch (error: any) {
+      console.error("Error loading stats:", error);
+      // Silently fail for stats - user can still use the dashboard
+      setStats({
+        properties: 0,
+        activeLeases: 0,
+        pendingPayments: 0,
+        totalRevenue: 0,
+      });
+    }
   };
 
   return (

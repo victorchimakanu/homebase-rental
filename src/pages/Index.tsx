@@ -8,7 +8,7 @@ import TenantDashboard from "@/components/tenant/TenantDashboard";
 
 const Index = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<{ id: string } | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -30,31 +30,58 @@ const Index = () => {
   }, [navigate]);
 
   const checkUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      setUser(session.user);
-      await loadUserRole(session.user.id);
-    } else {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      
+      if (session?.user) {
+        setUser(session.user);
+        await loadUserRole(session.user.id);
+      } else {
+        navigate("/auth");
+      }
+    } catch (error) {
+      console.error("Error checking user:", error);
       navigate("/auth");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const loadUserRole = async (userId: string) => {
-    const { data } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .single();
 
-    if (data) {
-      setRole(data.role);
+      if (error) {
+        // Only log if it's not a "no rows" error
+        if (error.code !== 'PGRST116') {
+          console.error("Error loading user role:", error);
+        }
+        return;
+      }
+
+      if (data) {
+        setRole(data.role);
+      }
+    } catch (error) {
+      console.error("Unexpected error loading user role:", error);
     }
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    navigate("/auth");
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      navigate("/auth");
+    } catch (error) {
+      console.error("Error signing out:", error);
+      // Still navigate to auth page even if sign out fails
+      navigate("/auth");
+    }
   };
 
   if (loading) {

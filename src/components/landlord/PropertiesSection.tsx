@@ -32,78 +32,126 @@ const PropertiesSection = ({ onUpdate }: { onUpdate: () => void }) => {
   }, []);
 
   const loadProperties = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) {
+        toast({ title: "Error", description: "You must be logged in", variant: "destructive" });
+        return;
+      }
 
-    const { data, error } = await supabase
-      .from("properties")
-      .select("*")
-      .eq("landlord_id", user.id)
-      .order("created_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("properties")
+        .select("*")
+        .eq("landlord_id", user.id)
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      toast({ title: "Error loading properties", description: error.message, variant: "destructive" });
-    } else {
-      setProperties(data || []);
+      if (error) {
+        toast({ title: "Error loading properties", description: "Failed to load properties. Please try again.", variant: "destructive" });
+      } else {
+        setProperties(data || []);
+      }
+    } catch (error: any) {
+      console.error("Error loading properties:", error);
+      toast({ title: "Error", description: "An unexpected error occurred", variant: "destructive" });
     }
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const propertyData = {
-      landlord_id: user.id,
-      name: formData.get("name") as string,
-      address: formData.get("address") as string,
-      unit_number: formData.get("unit_number") as string || null,
-      rent_amount: parseFloat(formData.get("rent_amount") as string),
-      deposit_amount: parseFloat(formData.get("deposit_amount") as string) || null,
-      status: formData.get("status") as string,
-    };
-
-    if (editingProperty) {
-      const { error } = await supabase
-        .from("properties")
-        .update(propertyData)
-        .eq("id", editingProperty.id);
-
-      if (error) {
-        toast({ title: "Error updating property", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Property updated successfully" });
-        setOpen(false);
-        setEditingProperty(null);
-        loadProperties();
-        onUpdate();
+    try {
+      const formData = new FormData(e.currentTarget);
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) {
+        toast({ title: "Error", description: "You must be logged in", variant: "destructive" });
+        return;
       }
-    } else {
-      const { error } = await supabase.from("properties").insert(propertyData);
 
-      if (error) {
-        toast({ title: "Error creating property", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Property created successfully" });
-        setOpen(false);
-        loadProperties();
-        onUpdate();
+      // Validate and parse numeric inputs
+      const rentAmount = parseFloat(formData.get("rent_amount") as string);
+      const depositAmountStr = formData.get("deposit_amount") as string;
+      const depositAmount = depositAmountStr ? parseFloat(depositAmountStr) : null;
+
+      if (isNaN(rentAmount) || rentAmount <= 0) {
+        toast({ title: "Error", description: "Please provide a valid rent amount greater than 0", variant: "destructive" });
+        return;
       }
+
+      if (depositAmount !== null && (isNaN(depositAmount) || depositAmount < 0)) {
+        toast({ title: "Error", description: "Please provide a valid deposit amount", variant: "destructive" });
+        return;
+      }
+
+      const propertyData = {
+        landlord_id: user.id,
+        name: formData.get("name") as string,
+        address: formData.get("address") as string,
+        unit_number: formData.get("unit_number") as string || null,
+        rent_amount: rentAmount,
+        deposit_amount: depositAmount,
+        status: formData.get("status") as string,
+      };
+
+      if (editingProperty) {
+        const { error } = await supabase
+          .from("properties")
+          .update(propertyData)
+          .eq("id", editingProperty.id);
+
+        if (error) {
+          console.error("Error updating property:", error);
+          toast({ title: "Error updating property", description: "Failed to update property. Please try again.", variant: "destructive" });
+        } else {
+          toast({ title: "Property updated successfully" });
+          setOpen(false);
+          setEditingProperty(null);
+          loadProperties();
+          onUpdate();
+        }
+      } else {
+        const { error } = await supabase.from("properties").insert(propertyData);
+
+        if (error) {
+          console.error("Error creating property:", error);
+          toast({ title: "Error creating property", description: "Failed to create property. Please try again.", variant: "destructive" });
+        } else {
+          toast({ title: "Property created successfully" });
+          setOpen(false);
+          loadProperties();
+          onUpdate();
+        }
+      }
+    } catch (error: any) {
+      console.error("Unexpected error:", error);
+      toast({ title: "Error", description: "An unexpected error occurred", variant: "destructive" });
     }
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this property?")) return;
 
-    const { error } = await supabase.from("properties").delete().eq("id", id);
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) {
+        toast({ title: "Error", description: "You must be logged in", variant: "destructive" });
+        return;
+      }
 
-    if (error) {
-      toast({ title: "Error deleting property", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Property deleted successfully" });
-      loadProperties();
-      onUpdate();
+      const { error } = await supabase.from("properties").delete().eq("id", id);
+
+      if (error) {
+        console.error("Error deleting property:", error);
+        toast({ title: "Error deleting property", description: "Failed to delete property. Please try again.", variant: "destructive" });
+      } else {
+        toast({ title: "Property deleted successfully" });
+        loadProperties();
+        onUpdate();
+      }
+    } catch (error: any) {
+      console.error("Unexpected error deleting property:", error);
+      toast({ title: "Error", description: "An unexpected error occurred", variant: "destructive" });
     }
   };
 

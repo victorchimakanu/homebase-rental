@@ -68,13 +68,13 @@ const ContactLandlordDialog = ({
         message: trimmedMessage,
       };
 
+      // Remove .select().single() - we don't need the returned ID
       const { error: insertError } = await supabase
         .from("messages")
-        .insert(payload)
-        .select("id")
-        .single();
+        .insert(payload);
 
       if (insertError) {
+        console.error("Error sending message:", insertError);
         // Handle RLS policy error
         if (insertError.code === "42501") {
           toast({
@@ -103,6 +103,7 @@ const ContactLandlordDialog = ({
       setMessage("");
       setOpen(false);
     } catch (error) {
+      console.error("Unexpected error sending message:", error);
       toast({
         title: "Failed to send message",
         description: "An unexpected error occurred.",

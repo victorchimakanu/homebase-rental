@@ -40,26 +40,41 @@ const TenantDashboard = () => {
   }, []);
 
   const loadTenantData = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) return;
 
-    const { data: leaseData } = await supabase
-      .from("leases")
-      .select("*, properties(*)")
-      .eq("tenant_id", user.id)
-      .eq("status", "active")
-      .single();
+      // Fetch lease data
+      const { data: leaseData, error: leaseError } = await supabase
+        .from("leases")
+        .select("*, properties(*)")
+        .eq("tenant_id", user.id)
+        .eq("status", "active")
+        .single();
 
-    if (leaseData) {
-      setLease(leaseData);
+      if (leaseError && leaseError.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+        throw leaseError;
+      }
 
-      const { data: paymentsData } = await supabase
-        .from("rent_payments")
-        .select("*")
-        .eq("lease_id", leaseData.id)
-        .order("due_date", { ascending: false });
+      if (leaseData) {
+        setLease(leaseData);
 
-      setPayments(paymentsData || []);
+        // Fetch payments data
+        const { data: paymentsData, error: paymentsError } = await supabase
+          .from("rent_payments")
+          .select("*")
+          .eq("lease_id", leaseData.id)
+          .order("due_date", { ascending: false });
+
+        if (paymentsError) throw paymentsError;
+        setPayments(paymentsData || []);
+      }
+    } catch (error: any) {
+      console.error("Error loading tenant data:", error);
+      // Set empty state on error
+      setLease(null);
+      setPayments([]);
     }
   };
 

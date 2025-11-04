@@ -44,107 +44,151 @@ const PaymentsSection = ({ onUpdate }: { onUpdate: () => void }) => {
   }, []);
 
   const loadPayments = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) return;
 
-    const { data: paymentsData, error } = await supabase
-      .from("rent_payments")
-      .select("*, leases!inner(landlord_id, tenant_id, properties(name))")
-      .eq("leases.landlord_id", user.id)
-      .order("due_date", { ascending: false });
+      // Fetch payments with leases, properties, and profiles in a single query using JOIN
+      const { data: paymentsData, error } = await supabase
+        .from("rent_payments")
+        .select(`
+          *,
+          leases!inner(
+            landlord_id,
+            tenant_id,
+            properties(name),
+            profiles:tenant_id(full_name)
+          )
+        `)
+        .eq("leases.landlord_id", user.id)
+        .order("due_date", { ascending: false });
 
-    if (error) {
-      toast({ title: "Error loading payments", description: error.message, variant: "destructive" });
-      return;
+      if (error) {
+        toast({ title: "Error loading payments", description: error.message, variant: "destructive" });
+        return;
+      }
+
+      // Format the data to match expected structure
+      const formattedPayments = (paymentsData || []).map((payment: any) => ({
+        ...payment,
+        leases: {
+          ...payment.leases,
+          profiles: payment.leases.profiles || { full_name: "Unknown" },
+        },
+      }));
+
+      setPayments(formattedPayments);
+    } catch (error: any) {
+      console.error("Error loading payments:", error);
+      toast({ 
+        title: "Error loading payments", 
+        description: "Failed to load payments. Please try again.", 
+        variant: "destructive" 
+      });
     }
-
-    // Fetch tenant profiles separately
-    const paymentsWithProfiles = await Promise.all(
-      (paymentsData || []).map(async (payment) => {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", payment.leases.tenant_id)
-          .single();
-
-        return {
-          ...payment,
-          leases: {
-            ...payment.leases,
-            profiles: profile || { full_name: "Unknown" },
-          },
-        };
-      })
-    );
-
-    setPayments(paymentsWithProfiles);
   };
 
   const loadLeases = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) return;
 
-    const { data: leasesData } = await supabase
-      .from("leases")
-      .select("id, rent_amount, tenant_id, properties(name)")
-      .eq("landlord_id", user.id)
-      .eq("status", "active");
+      // Fetch leases with properties and profiles in a single query using JOIN
+      const { data: leasesData, error } = await supabase
+        .from("leases")
+        .select(`
+          id,
+          rent_amount,
+          tenant_id,
+          properties(name),
+          profiles:tenant_id(full_name)
+        `)
+        .eq("landlord_id", user.id)
+        .eq("status", "active");
 
-    // Fetch tenant profiles separately
-    const leasesWithProfiles = await Promise.all(
-      (leasesData || []).map(async (lease) => {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", lease.tenant_id)
-          .single();
+      if (error) throw error;
 
-        return {
-          ...lease,
-          profiles: profile || { full_name: "Unknown" },
-        };
-      })
-    );
+      // Format the data to match expected structure
+      const formattedLeases = (leasesData || []).map((lease: any) => ({
+        ...lease,
+        profiles: lease.profiles || { full_name: "Unknown" },
+      }));
 
-    setLeases(leasesWithProfiles);
+      setLeases(formattedLeases);
+    } catch (error: any) {
+      console.error("Error loading leases:", error);
+      toast({ 
+        title: "Error loading leases", 
+        description: "Failed to load leases. Please try again.", 
+        variant: "destructive" 
+      });
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
+    try {
+      const formData = new FormData(e.currentTarget);
 
-    const paymentData = {
-      lease_id: formData.get("lease_id") as string,
-      amount: parseFloat(formData.get("amount") as string),
-      due_date: formData.get("due_date") as string,
-      status: "pending",
-      late_fee: 0,
-    };
+      // Validate and parse amount
+      const amount = parseFloat(formData.get("amount") as string);
+      if (isNaN(amount) || amount <= 0) {
+        toast({ title: "Error", description: "Please provide a valid amount greater than 0", variant: "destructive" });
+        return;
+      }
 
-    const { error } = await supabase.from("rent_payments").insert(paymentData);
+      const paymentData = {
+        lease_id: formData.get("lease_id") as string,
+        amount: amount,
+        due_date: formData.get("due_date") as string,
+        status: "pending",
+        late_fee: 0,
+      };
 
-    if (error) {
-      toast({ title: "Error creating payment", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Payment record created successfully" });
-      setOpen(false);
-      loadPayments();
-      onUpdate();
+      const { error } = await supabase.from("rent_payments").insert(paymentData);
+
+      if (error) {
+        console.error("Error creating payment:", error);
+        toast({ title: "Error creating payment", description: "Failed to create payment. Please try again.", variant: "destructive" });
+      } else {
+        toast({ title: "Payment record created successfully" });
+        setOpen(false);
+        loadPayments();
+        onUpdate();
+      }
+    } catch (error: any) {
+      console.error("Unexpected error creating payment:", error);
+      toast({ title: "Error", description: "An unexpected error occurred", variant: "destructive" });
     }
   };
 
   const markAsPaid = async (id: string) => {
-    const { error } = await supabase
-      .from("rent_payments")
-      .update({ status: "paid", paid_date: new Date().toISOString() })
-      .eq("id", id);
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!user) {
+        toast({ title: "Error", description: "You must be logged in", variant: "destructive" });
+        return;
+      }
 
-    if (error) {
-      toast({ title: "Error updating payment", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Payment marked as paid" });
-      loadPayments();
-      onUpdate();
+      const { error } = await supabase
+        .from("rent_payments")
+        .update({ status: "paid", paid_date: new Date().toISOString() })
+        .eq("id", id);
+
+      if (error) {
+        console.error("Error updating payment:", error);
+        toast({ title: "Error updating payment", description: "Failed to update payment. Please try again.", variant: "destructive" });
+      } else {
+        toast({ title: "Payment marked as paid" });
+        loadPayments();
+        onUpdate();
+      }
+    } catch (error: any) {
+      console.error("Unexpected error updating payment:", error);
+      toast({ title: "Error", description: "An unexpected error occurred", variant: "destructive" });
     }
   };
 
