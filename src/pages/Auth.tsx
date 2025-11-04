@@ -26,26 +26,50 @@ const Auth = () => {
     const fullName = formData.get("fullName") as string;
 
     try {
+      // Validate inputs
+      if (!email || !email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+        throw new Error("Please provide a valid email address");
+      }
+      
+      if (!password || password.length < 8) {
+        throw new Error("Password must be at least 8 characters long");
+      }
+      
+      if (!fullName || fullName.trim().length < 2) {
+        throw new Error("Please provide your full name");
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           emailRedirectTo: `${window.location.origin}/`,
           data: {
-            full_name: fullName,
+            full_name: fullName.trim(),
           },
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Sign up error:", error);
+        throw new Error("Unable to create account. Please try again.");
+      }
 
       if (data.user) {
-        // Insert user role
+        // Insert user role with error recovery
         const { error: roleError } = await supabase
           .from("user_roles")
           .insert({ user_id: data.user.id, role });
 
-        if (roleError) throw roleError;
+        if (roleError) {
+          console.error("Role insertion error:", roleError);
+          // Attempt to clean up the created user account
+          await supabase.auth.admin.deleteUser(data.user.id).catch(() => {
+            // If cleanup fails, log it but don't throw
+            console.error("Failed to cleanup user after role insertion failure");
+          });
+          throw new Error("Failed to assign user role. Please contact support.");
+        }
 
         toast({
           title: "Account created!",
@@ -53,9 +77,10 @@ const Auth = () => {
         });
       }
     } catch (error: any) {
+      console.error("Sign up error:", error);
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "An unexpected error occurred",
         variant: "destructive",
       });
     } finally {
@@ -72,18 +97,32 @@ const Auth = () => {
     const password = formData.get("password") as string;
 
     try {
+      // Validate inputs
+      if (!email || !email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+        throw new Error("Please provide a valid email address");
+      }
+      
+      if (!password) {
+        throw new Error("Password is required");
+      }
+
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Sign in error:", error);
+        // Use generic error message to prevent user enumeration attacks
+        throw new Error("Invalid email or password");
+      }
 
       navigate("/");
     } catch (error: any) {
+      console.error("Sign in error:", error);
       toast({
         title: "Error",
-        description: error.message,
+        description: error.message || "An unexpected error occurred",
         variant: "destructive",
       });
     } finally {
@@ -166,8 +205,11 @@ const Auth = () => {
                     name="password"
                     type="password"
                     required
-                    minLength={6}
+                    minLength={8}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Password must be at least 8 characters long
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label>I am a</Label>
